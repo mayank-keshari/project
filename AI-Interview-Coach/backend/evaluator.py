@@ -38,7 +38,7 @@ class InterviewEvaluator:
         prompt = f"Please evaluate the following interview transcript based on your system instructions:\n\n{transcript}"
         
         response = self.client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-3.6-flash',  # Updated to match the active engine model
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=self.system_prompt,
