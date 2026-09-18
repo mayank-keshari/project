@@ -1,9 +1,11 @@
-import streamlit as st
+import os
 import re
+import streamlit as st
 import plotly.express as px
 from backend.ai_engine import InterviewerEngine
 from backend.evaluator import InterviewEvaluator
 from backend.database import init_db, save_interview, get_history
+from google.genai.errors import ServerError, ClientError
 
 # Initialize the database on startup
 init_db()
@@ -45,6 +47,12 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# Helper function to get API key securely
+def get_api_key():
+    if "GEMINI_API_KEY" in st.secrets:
+        return st.secrets["GEMINI_API_KEY"]
+    return os.environ.get("GEMINI_API_KEY", "")
+
 # Session state initialization for authentication
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
@@ -80,16 +88,6 @@ if not st.session_state.authenticated:
 
 # --- MAIN DASHBOARD (POST-LOGIN) ---
 else:
-    if "engine" not in st.session_state:
-        st.session_state.engine = InterviewerEngine()
-
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-        st.session_state.messages.append({
-            "role": "assistant", 
-            "content": f"Welcome aboard, **{st.session_state.username}**! Let's begin your technical evaluation. Tell me about your background."
-        })
-
     # Sidebar Controls
     with st.sidebar:
         st.markdown(f"### 👤 Profile: `{st.session_state.username}`")
@@ -98,6 +96,8 @@ else:
             st.session_state.messages = []
             if "report" in st.session_state:
                 del st.session_state.report
+            if "engine" in st.session_state:
+                del st.session_state.engine
             st.rerun()
             
         st.markdown("---")
@@ -116,13 +116,27 @@ else:
         
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("🔄 Restart Session", use_container_width=True):
-            st.session_state.engine = InterviewerEngine(topic=interview_type, difficulty=difficulty)
+            api_key = get_api_key()
+            st.session_state.engine = InterviewerEngine(api_key=api_key, topic=interview_type, difficulty=difficulty)
             st.session_state.messages = [
                 {"role": "assistant", "content": f"Session re-initialized for **{interview_type}** at **{difficulty}** tier. Let's begin!"}
             ]
             if "report" in st.session_state:
                 del st.session_state.report
             st.rerun()
+
+    # Ensure engine exists in session state
+    if "engine" not in st.session_state:
+        api_key = get_api_key()
+        default_topic = st.session_state.get("type_select", "Technical")
+        st.session_state.engine = InterviewerEngine(api_key=api_key, topic=default_topic, difficulty="Beginner")
+
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+        st.session_state.messages.append({
+            "role": "assistant", 
+            "content": f"Welcome aboard, **{st.session_state.username}**! Let's begin your technical evaluation. Tell me about your background."
+        })
 
     st.title("🤖 AI Interview Coach & Analytics")
     st.markdown(f"*Active Sandbox: Advanced Technical Screening Suite*")
@@ -150,7 +164,15 @@ else:
 
                 with st.chat_message("assistant"):
                     with st.spinner("Analyzing response & formatting next question..."):
-                        response = st.session_state.engine.send_message(prompt)
+                        try:
+                            response = st.session_state.engine.send_message(prompt)
+                        except ServerError:
+                            response = "⚠️ **AI Service Temporarily Busy:** Google's Gemini servers are experiencing a brief hiccup. Please try sending your message again in a few seconds."
+                        except ClientError:
+                            response = "⚠️ **API Authorization Error:** Please verify that your `GEMINI_API_KEY` is correctly configured in Streamlit Secrets."
+                        except Exception as e:
+                            response = f"⚠️ An unexpected error occurred: {str(e)}"
+                        
                         st.markdown(response)
                         
                 st.session_state.messages.append({"role": "assistant", "content": response})
@@ -162,14 +184,17 @@ else:
                     if len(st.session_state.messages) > 2:
                         evaluator = InterviewEvaluator()
                         with st.spinner("Compiling technical assessment metrics and saving to database..."):
-                            report = evaluator.evaluate_interview(st.session_state.messages)
-                            st.session_state.report = report
-                            
-                            match = re.search(r'\*\*Overall Score:\*\* (\d+)/100', report)
-                            score = int(match.group(1)) if match else 0
-                            
-                            save_interview(st.session_state.type_select, score, report)
-                        st.rerun()
+                            try:
+                                report = evaluator.evaluate_interview(st.session_state.messages)
+                                st.session_state.report = report
+                                
+                                match = re.search(r'\*\*Overall Score:\*\* (\d+)/100', report)
+                                score = int(match.group(1)) if match else 0
+                                
+                                save_interview(st.session_state.get("type_select", "Technical"), score, report)
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Failed to generate evaluation report: {str(e)}")
                     else:
                         st.warning("Please interact with the interviewer before generating a report.")
 
@@ -192,7 +217,7 @@ else:
                 plot_bgcolor='rgba(0,0,0,0)',
                 font=dict(color='white')
             )
-            st.plotly_chart(fig, width="stretch")
+            st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("Complete your first interview session to unlock visualization charts.")
 
@@ -200,6 +225,6 @@ else:
         st.header("🗂️ Stored Evaluation Logs")
         df = get_history()
         if not df.empty:
-            st.dataframe(df, width="stretch", hide_index=True)
+            st.dataframe(df, use_container_width=True, hide_index=True)
         else:
             st.info("No past interview archives discovered in local SQLite database.")
