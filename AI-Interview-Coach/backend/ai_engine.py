@@ -5,13 +5,16 @@ from google.genai.errors import ServerError, ClientError
 
 class InterviewerEngine:
     def __init__(self, api_key=None, topic="Technical", difficulty="Beginner"):
+        # Fallback to environment or secrets if not passed directly
         if not api_key:
             api_key = os.environ.get("GEMINI_API_KEY")
+            
+        if not api_key:
+            raise ValueError("GEMINI_API_KEY is missing. Please check your Streamlit Secrets.")
             
         self.client = genai.Client(api_key=api_key)
         self.model = 'gemini-2.5-flash'
         
-        # Initialize chat session with dynamic topic and difficulty
         self.chat = self.client.chats.create(
             model=self.model,
             config=types.GenerateContentConfig(
@@ -27,6 +30,6 @@ class InterviewerEngine:
         except ServerError:
             return "⚠️ **AI Service Temporarily Busy:** Google's Gemini servers are experiencing a brief hiccup. Please try sending your message again in a few seconds."
         except ClientError:
-            return "⚠️ **API Authorization Error:** Please verify that your `GEMINI_API_KEY` is correctly configured in Streamlit Secrets."
+            return "⚠️ **API Authorization Error:** Please verify that your `GEMINI_API_KEY` is active and correctly configured in Streamlit Secrets."
         except Exception as e:
             return f"⚠️ An unexpected error occurred: {str(e)}"

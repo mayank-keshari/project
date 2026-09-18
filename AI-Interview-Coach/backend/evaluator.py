@@ -2,13 +2,20 @@ import os
 import streamlit as st
 from google import genai
 from google.genai import types
-from dotenv import load_dotenv
-
-load_dotenv()
 
 class InterviewEvaluator:
     def __init__(self):
-        api_key = st.secrets["GEMINI_API_KEY"] if "GEMINI_API_KEY" in st.secrets else os.environ.get("GEMINI_API_KEY")
+        # Look in Streamlit secrets first, then environment variables
+        api_key = None
+        try:
+            if "GEMINI_API_KEY" in st.secrets:
+                api_key = st.secrets["GEMINI_API_KEY"]
+        except Exception:
+            pass
+            
+        if not api_key:
+            api_key = os.environ.get("GEMINI_API_KEY")
+            
         self.client = genai.Client(api_key=api_key)
         
         self.system_prompt = """
@@ -32,13 +39,11 @@ class InterviewEvaluator:
         """
 
     def evaluate_interview(self, messages) -> str:
-        # Format the chat history into a readable transcript
         transcript = "\n".join([f"{msg['role'].capitalize()}: {msg['content']}" for msg in messages])
-        
         prompt = f"Please evaluate the following interview transcript based on your system instructions:\n\n{transcript}"
         
         response = self.client.models.generate_content(
-            model='gemini-3.6-flash',  # Updated to match the active engine model
+            model='gemini-2.5-flash',
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=self.system_prompt,
