@@ -30,6 +30,27 @@ class InterviewerEngine:
             )
         )
         
-    def send_message(self, message: str) -> str:
-        response = self.chat.send_message(message)
-        return response.text
+    from google.genai.errors import ServerError, ClientError
+
+class AIEngine:
+    def __init__(self, api_key, topic, difficulty):
+        self.client = genai.Client(api_key=api_key)
+        self.model = 'gemini-2.5-flash' # or gemini-3.6-flash depending on your working setup
+        
+        # Initialize chat session
+        self.chat = self.client.chats.create(
+            model=self.model,
+            config=types.GenerateContentConfig(
+                system_instruction=f"You are a strict technical interviewer conducting a mock interview on {topic} at a {difficulty} level.",
+                temperature=0.7
+            )
+        )
+
+    def send_message(self, message):
+        try:
+            response = self.chat.send_message(message)
+            return response.text
+        except ServerError:
+            return "⚠️ **AI Service Temporarily Busy:** Google's Gemini servers are experiencing a brief hiccup. Please try sending your message again in a few seconds."
+        except Exception as e:
+            return f"⚠️ An unexpected error occurred: {str(e)}"
