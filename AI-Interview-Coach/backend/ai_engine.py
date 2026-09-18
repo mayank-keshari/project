@@ -1,11 +1,17 @@
 import os
+import streamlit as st
 from google import genai
 from google.genai import types
 from google.genai.errors import ServerError, ClientError
 
 class InterviewerEngine:
     def __init__(self, api_key=None, topic="Technical", difficulty="Beginner"):
-        # Fallback to environment or secrets if not passed directly
+        # Check argument -> Streamlit Secrets -> Environment Variables
+        if not api_key:
+            try:
+                api_key = st.secrets.get("GEMINI_API_KEY")
+            except Exception:
+                pass
         if not api_key:
             api_key = os.environ.get("GEMINI_API_KEY")
             
